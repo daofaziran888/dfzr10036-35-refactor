@@ -219,16 +219,25 @@ def flow_rate_propagation() -> dict[str, Any]:
     return {"ok": True, "trace": trace, "call_count": len(trace)}
 
 
-def flow_sink_block_to_compaction(sink_entry_id: int) -> dict[str, Any]:
+def flow_sink_block_to_compaction(sink_entry_id: int, confirm: bool = True) -> dict[str, Any]:
     """主线链路8: 落盘阻塞→小文件合并清理
 
     调用数: 2+
+    启动登记与确认回执由 compaction 服务统一给出；返回字段保持原样，
+    并追加确认回执供断点续办核对实际确认的一侧。
     """
     trace: list[str] = []
 
-    result = sink_writer.trigger_block_cleanup(sink_entry_id)
-    if result:
+    started = sink_writer.start_block_cleanup(sink_entry_id, confirm=confirm)
+    if started:
+        result = started["task"]
+        receipt = started["receipt"]
         trace.append(f"sink_writer#{sink_entry_id} -> compaction#{result['id']}")
+        response = {"ok": True, "trace": trace, "call_count": len(trace)}
+        response.update(receipt)
+        response["message"] = started["message"]
+        response["entry"] = result
+        return response
 
     return {"ok": True, "trace": trace, "call_count": len(trace)}
 

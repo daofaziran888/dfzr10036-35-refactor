@@ -49,26 +49,18 @@ class SinkWriterService(BaseModuleService):
         """写入阻塞时触发 compaction 合并小文件。
 
         数据流链路: sink_writer(写入阻塞) -> compaction
+        启动登记与确认收拢在 CompactionService，这里只保留受理条件与原返回结果
+        （仍返回合并任务本身）。
         """
+        started = self.start_block_cleanup(entry_id)
+        return started["task"] if started else None
+
+    def start_block_cleanup(self, entry_id: int, *,
+                            confirm: bool = True) -> dict[str, Any] | None:
+        """阻塞清理受理：返回任务、启动登记和确认回执，供结果落盘识别受理结果。"""
+        from app.services.compaction import CompactionService
+
         entry = self.get_entry(entry_id)
         if entry is None or entry.get("status") != "写入阻塞":
             return None
-
-        comp_rows = store.rows("compaction")
-        new_id = max((int(r.get("id", 0)) for r in comp_rows), default=0) + 1
-        comp = {
-            "id": new_id,
-            "任务编号": f"COMP-{new_id:04d}",
-            "目标表": str(entry.get("目标载体", "unknown")),
-            "文件数量": 85,
-            "合并策略": "BinPack-按大小合并",
-            "触发阈值": "文件数 >= 50",
-            "执行内存": "2GB",
-            "合并耗时": "未执行",
-            "释放空间": "未执行",
-            "status": "合并中",
-            "pending": True,
-            "abnormal": False,
-        }
-        comp_rows.append(comp)
-        return comp
+        return CompactionService().start_from_block_cleanup(entry, confirm=confirm)

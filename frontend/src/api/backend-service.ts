@@ -1,6 +1,6 @@
 import { request } from './client'
 import { moduleMeta } from '@/data/modules'
-import type { ActionResult, EntryRow, OverviewResult, PageResult } from '@/data/types'
+import type { ActionResult, EntryRow, OverviewResult, PageResult, StartupState } from '@/data/types'
 
 export { moduleMeta }
 
@@ -34,6 +34,12 @@ export async function runAction(
     method: 'POST',
     body: JSON.stringify({ action }),
   })
+  return await response.json()
+}
+
+export async function loadCompactionStartup(id: number): Promise<StartupState> {
+  const response = await request(`/api/compaction/${id}/startup`)
+  if (!response.ok) throw new Error('启动登记读取失败')
   return await response.json()
 }
 

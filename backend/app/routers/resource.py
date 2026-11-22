@@ -94,8 +94,15 @@ def create_entry(module: str, payload: EntryPayload) -> ActionResult:
 @router.post("/{module}/{entry_id}/actions", response_model=ActionResult)
 def run_action(module: str, entry_id: int, payload: ActionPayload) -> ActionResult:
     service = require_service(module)
-    entry, message = service.run_action(entry_id, payload.action.strip())
-    return ActionResult(ok=entry is not None, message=message, entry=entry)
+    detail = getattr(service, "run_action_detail", None)
+    if detail is None:
+        entry, message = service.run_action(entry_id, payload.action.strip())
+        return ActionResult(ok=entry is not None, message=message, entry=entry)
+    entry, message, receipt = detail(entry_id, payload.action.strip())
+    if receipt is None:
+        return ActionResult(ok=entry is not None, message=message, entry=entry)
+    return ActionResult(ok=entry is not None, message=message, entry=entry,
+                        receipt=receipt, start_state=receipt.get("state"))
 
 
 # ---- 跨模块编排流端点 ----
@@ -150,10 +157,13 @@ def trigger_flow_rate_propagation() -> dict[str, Any]:
 
 
 @router.post("/flows/sink-block-to-compaction")
-def trigger_flow_sink_block_to_compaction(sink_entry_id: int) -> dict[str, Any]:
-    """主线链路: 落盘阻塞 -> 小文件合并清理"""
+def trigger_flow_sink_block_to_compaction(sink_entry_id: int, confirm: bool = Query(default=True)) -> dict[str, Any]:
+    """主线链路: 落盘阻塞 -> 小文件合并清理
+
+    confirm=false 只受理并登记启动，返回待续回执，便于核对断点续办入口。
+    """
     from app.services.orchestrator import flow_sink_block_to_compaction
-    return flow_sink_block_to_compaction(sink_entry_id)
+    return flow_sink_block_to_compaction(sink_entry_id, confirm=confirm)
 
 
 @router.get("/flows/list")
@@ -161,3 +171,18 @@ def list_flows() -> dict[str, Any]:
     """列出所有可编排流链路"""
     from app.services.orchestrator import FLOWS
     return {"flows": list(FLOWS.keys()), "count": len(FLOWS)}
+
+
+@router.get("/compaction/{entry_id}/startup")
+def compaction_startup(entry_id: int) -> dict[str, Any]:
+    """反查合并任务的启动登记：实际确认方、未写入方、续办入口。"""
+    from app.services import service_for
+    from app.services.compaction import CompactionService
+
+    service = service_for("compaction")
+    if not isinstance(service, CompactionService):
+        raise HTTPException(status_code=404, detail="未知业务模块：compaction")
+    state = service.startup_state(entry_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail=f"{service.ENTITY} {entry_id} 不存在或已归档")
+    return state

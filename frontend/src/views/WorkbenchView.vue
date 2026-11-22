@@ -86,6 +86,19 @@
       </form>
     </div>
 
+    <div v-if="startupReceipt" class="startup-receipt" data-testid="startup-receipt">
+      <strong>{{ startupReceipt.任务编号 || `任务 ${startupReceipt.task_id}` }}：{{ startupReceipt.受理结果 }}</strong>
+      <span>确认启动：{{ startupReceipt.confirmed_by || '尚未确认' }}</span>
+      <span>未写入：{{ (startupReceipt.not_written_by || []).join('、') || '无' }}</span>
+      <span v-if="startupReceipt.续办入口" data-testid="startup-resume">
+        续办入口：{{ startupReceipt.续办入口.method }} {{ startupReceipt.续办入口.path }}
+        {{ JSON.stringify(startupReceipt.续办入口.params ?? startupReceipt.续办入口.body ?? {}) }}
+      </span>
+      <button class="link" type="button" data-testid="close-startup-receipt" @click="startupReceipt = null">
+        关闭
+      </button>
+    </div>
+
     <footer class="page-foot">
       <span>共 {{ total }} 条{{ meta.name }}记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
@@ -103,13 +116,14 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/backend-service'
-import type { EntryRow } from '@/data/types'
+import type { EntryRow, StartupReceipt } from '@/data/types'
 
 const props = defineProps<{ moduleKey: string }>()
 const meta = moduleMeta(props.moduleKey)
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
+const startupReceipt = ref<StartupReceipt | null>(null)
 const filters = ref<Record<string, string>>({})
 const filterFields = meta.fields.slice(0, 3)
 const showCreate = ref(false)
@@ -167,9 +181,11 @@ async function submitCreate() {
 
 async function runAction(action: string, row: EntryRow) {
   errorMessage.value = ''
+  startupReceipt.value = null
   try {
     const result = await applyAction(meta.key, Number(row.id), action)
     if (!result.ok) throw new Error(result.message)
+    if (result.receipt) startupReceipt.value = result.receipt
     await reload()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '操作失败'

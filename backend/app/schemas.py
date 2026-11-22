@@ -19,6 +19,9 @@ class ActionResult(BaseModel):
     ok: bool
     message: str
     entry: dict[str, Any] | None = None
+    # 启动确认回执：仅小文件合并的启动登记返回，原有字段保持不变。
+    receipt: dict[str, Any] | None = None
+    start_state: str | None = None
 
 
 class EntryPayload(BaseModel):

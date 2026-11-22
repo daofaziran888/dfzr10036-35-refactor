@@ -14,12 +14,18 @@ class Store:
         self._tables: dict[str, list[dict[str, Any]]] = {
             name: [dict(row) for row in rows] for name, rows in SEED_ROWS.items()
         }
+        # 跨模块的过程台账不落入业务模块表，避免出现在模块列表和概览统计里。
+        self._ledgers: dict[str, list[dict[str, Any]]] = {}
 
     def module_names(self) -> list[str]:
         return sorted(self._tables)
 
     def rows(self, module: str) -> list[dict[str, Any]]:
         return self._tables.setdefault(module, [])
+
+    def ledger(self, name: str) -> list[dict[str, Any]]:
+        """命名台账：承载启动登记、回执等不进业务列表的过程数据。"""
+        return self._ledgers.setdefault(name, [])
 
     def find(self, module: str, entry_id: int) -> dict[str, Any] | None:
         for row in self.rows(module):

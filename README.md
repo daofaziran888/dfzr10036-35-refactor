@@ -81,5 +81,21 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+### 小文件合并的启动登记
+
+工作台「启动合并」和结果落盘阻塞清理共用 `CompactionService` 的启动登记：
+
+- 阻塞清理只接受 `写入阻塞` 的落盘记录，按 `sink_block:sink_writer#<id>` 关联任务，
+  不按目标表猜测；同表其它记录和已有手工任务各自独立。
+- 每次启动先写一条待确认登记（`compaction_start_registrations` 台账），包括续办入口；
+  再由 `confirm_startup` 在锁内原子确认。两侧并发时只有一侧写「合并中」，
+  另一侧返回 `reused` 并记入 `未写入方`。
+- 任务取消或标记失败后，晚到的续办只复用、不改状态，登记记为已失效或留下后续登记。
+- 阻塞清理响应保留原有 `ok/trace/call_count`，并追加确认回执；传 `confirm=false`
+  只受理并登记，返回 `pending` 与续办入口。
+- 反查启动登记：`GET /api/compaction/{id}/startup`。
+
+回归测试：`cd backend && .venv/bin/python -m unittest discover -s tests -t . -v`
+
 领域：数据工程
 子方向：数仓与数据湖
